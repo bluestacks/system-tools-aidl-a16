@@ -277,6 +277,21 @@ static Result<void> add_list_files(const string& dirname, vector<string>* result
       if (auto ret = add_list_files(dirname + OS_PATH_SEPARATOR + ent->d_name, result); !ret.ok()) {
         return ret;
       }
+    } else if (ent->d_type == DT_UNKNOWN) {
+      // Some filesystems (e.g. XFS without ftype=1, NFS) do not fill in
+      // d_type; fall back to stat() so entries are not silently skipped.
+      const std::string path = dirname + OS_PATH_SEPARATOR + ent->d_name;
+      struct stat st;
+      if (stat(path.c_str(), &st) != 0) {
+        return Error() << "Failed to stat '" << path << "': " << strerror(errno);
+      }
+      if (S_ISREG(st.st_mode)) {
+        result->emplace_back(path);
+      } else if (S_ISDIR(st.st_mode)) {
+        if (auto ret = add_list_files(path, result); !ret.ok()) {
+          return ret;
+        }
+      }
     }
   }
 
